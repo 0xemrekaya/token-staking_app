@@ -46,6 +46,7 @@ class _MyHomePageState extends State<MyHomePage> {
   late Accounts currentAccount;
   late Accounts account1;
   late Accounts account2;
+  String? txText;
   BigInt? userBalance;
   TextEditingController _transferController = TextEditingController();
   TextEditingController _amountController = TextEditingController();
@@ -61,7 +62,7 @@ class _MyHomePageState extends State<MyHomePage> {
     httpClient = Client();
     ethClient = Web3Client(rpcUrl.toString(), httpClient);
     createAccount();
-    currentAccount = account2;
+    currentAccount = account1;
     credentials = EthPrivateKey.fromHex(currentAccount.accountPrivateKey.toString());
   }
 
@@ -92,7 +93,7 @@ class _MyHomePageState extends State<MyHomePage> {
     int amount = int.parse(_amount);
     EthereumAddress receiver = EthereumAddress.fromHex(address);
     BigInt bigIntNumber = BigInt.from(amount);
-    bigIntNumber = BigInt.from(1000000000000000000);
+    //bigIntNumber = BigInt.from(1000000000000000000);
 
     final contractFunction = contract.function('transfer');
     final response = await ethClient.sendTransaction(
@@ -101,9 +102,9 @@ class _MyHomePageState extends State<MyHomePage> {
         contract: contract,
         function: contractFunction,
         parameters: [receiver, bigIntNumber],
+        maxFeePerGas: EtherAmount.inWei(BigInt.from(10000000000)),
       ),
-      chainId: null,
-      fetchChainIdFromNetworkId: true
+      chainId: 11155111,
     );
 
     if (response != null) {
@@ -111,6 +112,8 @@ class _MyHomePageState extends State<MyHomePage> {
     } else {
       print('Transfer failed!');
     }
+    txText = response;
+    setState(() {});
   }
 
   void createAccount() {
@@ -224,7 +227,8 @@ class _MyHomePageState extends State<MyHomePage> {
                         _transferTokens(_transferController.text, _amountController.text);
                       },
                       child: Icon(Icons.send_outlined)),
-                )
+                ),
+                Text(txText.toString()),
               ],
             )
           ],
