@@ -38,6 +38,7 @@ class _MyHomePageState extends State<MyHomePage> {
   late Client httpClient;
   late Web3Client ethClient;
   late Credentials credentials;
+  late DeployedContract contract;
   final rpcUrl = dotenv.env['SEPOLIA_RPC_URL'];
   final privateKey = dotenv.env['PRIVATE_KEY'];
   final privateKey2 = dotenv.env['PRIVATE_KEY2'];
@@ -46,15 +47,14 @@ class _MyHomePageState extends State<MyHomePage> {
   late Accounts account1;
   late Accounts account2;
   BigInt? userBalance;
-
+  TextEditingController _transferController = TextEditingController();
+  TextEditingController _amountController = TextEditingController();
   @override
   void initState() {
-    _initWeb3();
     loadContract();
+    _initWeb3();
     super.initState();
   }
-
-  String getUserPrivateKey(Accounts acc) => acc.accountPrivateKey.toString();
 
   // 0x4F36Cd68f45D45a6E5574a41Bd2B9c83841c999f contract address
   Future<void> _initWeb3() async {
@@ -70,7 +70,7 @@ class _MyHomePageState extends State<MyHomePage> {
     final abiJson = jsonDecode(EmreABI);
     final abi = jsonEncode(abiJson["abi"]);
     String contractAddress = "0x4F36Cd68f45D45a6E5574a41Bd2B9c83841c999f";
-    final contract = DeployedContract(ContractAbi.fromJson(abi, "Emre"), EthereumAddress.fromHex(contractAddress));
+    contract = DeployedContract(ContractAbi.fromJson(abi, "Emre"), EthereumAddress.fromHex(contractAddress));
     return contract;
   }
 
@@ -81,10 +81,36 @@ class _MyHomePageState extends State<MyHomePage> {
   }
 
   Future<List<dynamic>> query(String funcName, List<dynamic> args) async {
-    final contract = await loadContract();
-    final ethFunc = contract.function(funcName);
-    final result = await ethClient.call(contract: contract, function: ethFunc, params: args);
+    final _contract = await loadContract();
+    final ethFunc = _contract.function(funcName);
+    final result = await ethClient.call(contract: _contract, function: ethFunc, params: args);
     return result;
+  }
+
+  // Transfer fonksiyonunu kullanmak için işlev
+  Future<void> _transferTokens(String address, String _amount) async {
+    int amount = int.parse(_amount);
+    EthereumAddress receiver = EthereumAddress.fromHex(address);
+    BigInt bigIntNumber = BigInt.from(amount);
+    bigIntNumber = BigInt.from(1000000000000000000);
+
+    final contractFunction = contract.function('transfer');
+    final response = await ethClient.sendTransaction(
+      credentials,
+      Transaction.callContract(
+        contract: contract,
+        function: contractFunction,
+        parameters: [receiver, bigIntNumber],
+      ),
+      chainId: null,
+      fetchChainIdFromNetworkId: true
+    );
+
+    if (response != null) {
+      print('Transfer successful!');
+    } else {
+      print('Transfer failed!');
+    }
   }
 
   void createAccount() {
@@ -165,6 +191,42 @@ class _MyHomePageState extends State<MyHomePage> {
                 }
               },
             ),
+            Column(
+              children: [
+                Padding(
+                  padding: const EdgeInsets.only(left: 20, right: 20, top: 30),
+                  child: TextFormField(
+                    controller: _transferController,
+                    decoration: InputDecoration(
+                        hintText: 'Eth Address...',
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(8.0),
+                          borderSide: BorderSide(color: Colors.grey),
+                        )),
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.only(left: 20, right: 20, top: 10),
+                  child: TextFormField(
+                    controller: _amountController,
+                    decoration: InputDecoration(
+                        hintText: 'Amount: ',
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(8.0),
+                          borderSide: BorderSide(color: Colors.grey),
+                        )),
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.only(top: 10.0),
+                  child: ElevatedButton(
+                      onPressed: () {
+                        _transferTokens(_transferController.text, _amountController.text);
+                      },
+                      child: Icon(Icons.send_outlined)),
+                )
+              ],
+            )
           ],
         ));
   }
