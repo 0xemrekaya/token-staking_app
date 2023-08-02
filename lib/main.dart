@@ -1,5 +1,4 @@
 import 'dart:convert';
-
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_application_1/accounts.dart';
@@ -38,10 +37,9 @@ class _MyHomePageState extends State<MyHomePage> {
   late Client httpClient;
   late Web3Client ethClient;
   late Credentials credentials;
-  late DeployedContract contract;
-  final rpcUrl = dotenv.env['SEPOLIA_RPC_URL'];
-  final privateKey = dotenv.env['PRIVATE_KEY'];
-  final privateKey2 = dotenv.env['PRIVATE_KEY2'];
+  final rpcUrl = dotenv.env['LOCALHOST_RPC_URL']; //Ganache server url address
+  final privateKey = dotenv.env['PRIVATE_KEY']; // Ganache server Account 1 private key
+  final privateKey2 = dotenv.env['PRIVATE_KEY2']; //Ganache server Account 2 private key
   List<Accounts> accounts = [];
   late Accounts currentAccount;
   late Accounts account1;
@@ -60,7 +58,10 @@ class _MyHomePageState extends State<MyHomePage> {
   // 0x4F36Cd68f45D45a6E5574a41Bd2B9c83841c999f contract address
   Future<void> _initWeb3() async {
     httpClient = Client();
-    ethClient = Web3Client(rpcUrl.toString(), httpClient);
+    ethClient = Web3Client(
+      rpcUrl.toString(),
+      httpClient,
+    );
     createAccount();
     currentAccount = account1;
     credentials = EthPrivateKey.fromHex(currentAccount.accountPrivateKey.toString());
@@ -70,8 +71,8 @@ class _MyHomePageState extends State<MyHomePage> {
     String EmreABI = await rootBundle.loadString("assets/emre_abi.json");
     final abiJson = jsonDecode(EmreABI);
     final abi = jsonEncode(abiJson["abi"]);
-    String contractAddress = "0x4F36Cd68f45D45a6E5574a41Bd2B9c83841c999f";
-    contract = DeployedContract(ContractAbi.fromJson(abi, "Emre"), EthereumAddress.fromHex(contractAddress));
+    String contractAddress = "0x877a6146d765333442BFdB48a1B461df163f585e"; //deployed contract
+    final contract = DeployedContract(ContractAbi.fromJson(abi, "Emre"), EthereumAddress.fromHex(contractAddress));
     return contract;
   }
 
@@ -82,38 +83,45 @@ class _MyHomePageState extends State<MyHomePage> {
   }
 
   Future<List<dynamic>> query(String funcName, List<dynamic> args) async {
-    final _contract = await loadContract();
-    final ethFunc = _contract.function(funcName);
-    final result = await ethClient.call(contract: _contract, function: ethFunc, params: args);
+    final contract = await loadContract();
+    final ethFunc = contract.function(funcName);
+    final result = await ethClient.call(contract: contract, function: ethFunc, params: args);
     return result;
   }
 
   // Transfer fonksiyonunu kullanmak için işlev
-  Future<void> _transferTokens(String address, String _amount) async {
+  Future<void> transferTokens(String address, String _amount) async {
+    final contract = await loadContract();
+    final contractFunction = contract.function('transfer');
     int amount = int.parse(_amount);
     EthereumAddress receiver = EthereumAddress.fromHex(address);
-    BigInt bigIntNumber = BigInt.from(amount);
-    //bigIntNumber = BigInt.from(1000000000000000000);
-
-    final contractFunction = contract.function('transfer');
+    BigInt bigIntNumber = BigInt.from(amount) * BigInt.from(10).pow(18);
     final response = await ethClient.sendTransaction(
-      credentials,
-      Transaction.callContract(
-        contract: contract,
-        function: contractFunction,
-        parameters: [receiver, bigIntNumber],
-        maxFeePerGas: EtherAmount.inWei(BigInt.from(10000000000)),
-      ),
-      chainId: 11155111,
-    );
-
-    if (response != null) {
-      print('Transfer successful!');
-    } else {
-      print('Transfer failed!');
-    }
+        credentials,
+        Transaction.callContract(
+          from: credentials.address,
+          contract: contract,
+          function: contractFunction,
+          parameters: [receiver, bigIntNumber],
+          maxGas: 1000000,
+        ),
+        chainId: 1337,
+        fetchChainIdFromNetworkId: false);
     txText = response;
-    setState(() {});
+  }
+
+  Future<void> sendEther(String address, String _amount) async {
+    int amount = int.parse(_amount);
+    EthereumAddress receiver = EthereumAddress.fromHex(address);
+    final response = await ethClient.sendTransaction(
+        credentials,
+        Transaction(
+          to: receiver,
+          value: EtherAmount.fromInt(EtherUnit.ether, amount),
+        ),
+        chainId: 1337,
+        fetchChainIdFromNetworkId: false);
+    txText = response;
   }
 
   void createAccount() {
@@ -224,7 +232,7 @@ class _MyHomePageState extends State<MyHomePage> {
                   padding: const EdgeInsets.only(top: 10.0),
                   child: ElevatedButton(
                       onPressed: () {
-                        _transferTokens(_transferController.text, _amountController.text);
+                        transferTokens(_transferController.text, _amountController.text);
                       },
                       child: Icon(Icons.send_outlined)),
                 ),
