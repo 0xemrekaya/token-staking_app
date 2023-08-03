@@ -12,7 +12,7 @@ module.exports = {
   networks: {
     //Localhost requires an instance of ganache or similar local node
     localhost01: {
-      url: "HTTP://0.0.0.0:7545",
+      url: "HTTP://192.168.1.230:7545",
       accounts: { mnemonic: process.env.LOCALHOST_SECRET_KEY }
     },
     localhost2: {
