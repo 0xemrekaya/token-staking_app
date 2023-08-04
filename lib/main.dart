@@ -1,4 +1,6 @@
 import 'dart:convert';
+import 'dart:ffi';
+import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_application_1/accounts.dart';
@@ -45,8 +47,15 @@ class _MyHomePageState extends State<MyHomePage> {
   late Accounts currentAccount;
   late Accounts account1;
   late Accounts account2;
-  String? txText;
+  String? duration;
+  String? rewards;
+  String? stakeToken;
+  String? approveToken;
+  String txText = "";
   BigInt? userBalance;
+  String? totalSupply;
+  String? stakingRewardsRate;
+  String? rewardPerToken;
   TextEditingController _transferController = TextEditingController();
   TextEditingController _amountController = TextEditingController();
 
@@ -74,7 +83,7 @@ class _MyHomePageState extends State<MyHomePage> {
     String EmreABI = await rootBundle.loadString("assets/emre_abi.json");
     final abiJson = jsonDecode(EmreABI);
     final abi = jsonEncode(abiJson["abi"]);
-    String contractAddress = "0x054958005fD87355FD7B7d145Cf26D820D657B06"; //deployed contract
+    String contractAddress = "0x408A75B834DAA994dd9c421e095E0c527d16104B"; //deployed contract
     final contract = DeployedContract(ContractAbi.fromJson(abi, "Emre"), EthereumAddress.fromHex(contractAddress));
     return contract;
   }
@@ -83,7 +92,7 @@ class _MyHomePageState extends State<MyHomePage> {
     String StakingRewardsABI = await rootBundle.loadString("assets/StakingRewards_abi.json");
     final abiJson = jsonDecode(StakingRewardsABI);
     final abi = jsonEncode(abiJson["abi"]);
-    String contractAddress = "0x0B5EFBcE065Ca57ED77B817D7660678dcF9DD423"; //deployed contract
+    String contractAddress = "0x4B0743c182838824ffF2469cB7a573cFBc069144"; //deployed contract
     final contract =
         DeployedContract(ContractAbi.fromJson(abi, "StakingRewards"), EthereumAddress.fromHex(contractAddress));
     return contract;
@@ -93,6 +102,32 @@ class _MyHomePageState extends State<MyHomePage> {
     var address = credentials.address;
     var result = await queryEmreContract("balanceOf", [address]);
     return result[0] as BigInt;
+  }
+
+  Future<BigInt> getStakedBalanceOf() async {
+    var address = credentials.address;
+    var result = await queryStakingRewardsContract("balanceOf", [address]);
+    return result[0] as BigInt;
+  }
+
+  Future<BigInt> getEarned() async {
+    var address = credentials.address;
+    var result = await queryStakingRewardsContract("earned", [address]);
+    return result[0] as BigInt;
+  }
+
+  Future<String> getRewardRate() async {
+    var result = await queryStakingRewardsContract("rewardRate", []);
+    var a = result[0] as BigInt;
+    stakingRewardsRate = a.toString();
+    return stakingRewardsRate!;
+  }
+
+  Future<String> rewardPerTokens() async {
+    var result = await queryStakingRewardsContract("rewardPerToken", []);
+    var a = result[0] as BigInt;
+    rewardPerToken = a.toString();
+    return rewardPerToken!;
   }
 
   Future<BigInt> getStakedTokenTotalSupply() async {
@@ -107,12 +142,48 @@ class _MyHomePageState extends State<MyHomePage> {
     return result;
   }
 
-  Future<void> stakeForApprove() async {
-    String _amount = "100";
+  Future<void> getReward() async {
+    final contract = await loadStakingRewardsContract();
+    final contractFunction = contract.function('getReward');
+    final response = await ethClient.sendTransaction(
+        credentials,
+        Transaction.callContract(
+          from: credentials.address,
+          contract: contract,
+          function: contractFunction,
+          parameters: [],
+          maxGas: 1000000,
+        ),
+        chainId: 1337,
+        fetchChainIdFromNetworkId: false);
+    txText = response;
+    setState(() {});
+  }
+
+  Future<void> withdraw() async {
+    final contract = await loadStakingRewardsContract();
+    final contractFunction = contract.function('withdraw');
+    final stakedToken = await getStakedBalanceOf();
+    final response = await ethClient.sendTransaction(
+        credentials,
+        Transaction.callContract(
+          from: credentials.address,
+          contract: contract,
+          function: contractFunction,
+          parameters: [stakedToken],
+          maxGas: 1000000,
+        ),
+        chainId: 1337,
+        fetchChainIdFromNetworkId: false);
+    txText = response;
+    setState(() {});
+  }
+
+  Future<void> stakeForApprove(String approveToken) async {
     final contract = await loadEmreContract();
     final contractFunction = contract.function('approve');
-    EthereumAddress spender = EthereumAddress.fromHex("0x0B5EFBcE065Ca57ED77B817D7660678dcF9DD423");
-    int amount = int.parse(_amount);
+    EthereumAddress spender = EthereumAddress.fromHex("0x4B0743c182838824ffF2469cB7a573cFBc069144");
+    int amount = int.parse(approveToken);
     BigInt bigIntNumber = BigInt.from(amount) * BigInt.from(10).pow(18);
     final response = await ethClient.sendTransaction(
         credentials,
@@ -129,11 +200,10 @@ class _MyHomePageState extends State<MyHomePage> {
     setState(() {});
   }
 
-  Future<void> stakeTokens() async {
-    String _amount = "10";
+  Future<void> stakeTokens(String stakeToken) async {
     final contract = await loadStakingRewardsContract();
     final contractFunction = contract.function('stake');
-    int amount = int.parse(_amount);
+    int amount = int.parse(stakeToken);
     BigInt bigIntNumber = BigInt.from(amount) * BigInt.from(10).pow(18);
     final response = await ethClient.sendTransaction(
         credentials,
@@ -150,12 +220,11 @@ class _MyHomePageState extends State<MyHomePage> {
     setState(() {});
   }
 
-  Future<void> setDurationOfStaking() async {
-    String duration = "100";
+  Future<void> setDurationOfStaking(String duration) async {
+    int amount = int.parse(duration);
+    BigInt bigIntNumber = BigInt.from(amount);
     final contract = await loadStakingRewardsContract();
     final contractFunction = contract.function('setRewardsDuration');
-    int amount = int.parse(duration);
-    BigInt bigIntNumber = BigInt.from(amount) * BigInt.from(10).pow(18);
     final response = await ethClient.sendTransaction(
         credentials,
         Transaction.callContract(
@@ -171,12 +240,11 @@ class _MyHomePageState extends State<MyHomePage> {
     setState(() {});
   }
 
-  Future<void> setNotifyRewardAmount() async {
-    String amount = "100";
+  Future<void> setNotifyRewardAmount(String rewards) async {
+    int amount = int.parse(rewards);
     final contract = await loadStakingRewardsContract();
     final contractFunction = contract.function('notifyRewardAmount');
-    int amount2 = int.parse(amount);
-    BigInt bigIntNumber = BigInt.from(amount2) * BigInt.from(10).pow(18);
+    BigInt bigIntNumber = BigInt.from(amount) * BigInt.from(10).pow(18);
     final response = await ethClient.sendTransaction(
         credentials,
         Transaction.callContract(
@@ -277,6 +345,12 @@ class _MyHomePageState extends State<MyHomePage> {
     // Format the balance with desired decimal places (e.g., 2 decimal places)
     return balanceDecimal.toStringAsFixed(2);
   }
+  String _formatDouble(BigInt balance) {
+    // Convert the balance to decimal
+    final balanceDecimal = balance / BigInt.from(10).pow(18);
+    // Format the balance with desired decimal places (e.g., 2 decimal places)
+    return balanceDecimal.toStringAsFixed(20);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -325,11 +399,130 @@ class _MyHomePageState extends State<MyHomePage> {
   }
 
   Column wallet(BuildContext context) {
+    getRewardRate();
+    rewardPerTokens();
     return Column(
       children: [
         Center(
           child: FutureBuilder<BigInt>(
             future: getStakedTokenTotalSupply(),
+            builder: (context, snapshot) {
+              if (snapshot.connectionState == ConnectionState.waiting) {
+                return const Center(child: CircularProgressIndicator());
+              } else if (snapshot.hasError) {
+                return Center(child: Text('Error: ${snapshot.error.toString()}'));
+              } else {
+                final balance = snapshot.data;
+                final formattedBalance = _formatInt(balance!); // Assuming 18 decimals for ETH
+                totalSupply = formattedBalance;
+                return Center(
+                    child: Column(
+                  children: [
+                    Text(
+                      "Current account name: ${currentAccount.accountName}",
+                      style: Theme.of(context).textTheme.headlineMedium,
+                    ),
+                    Text(
+                      'Staked token total supply: $formattedBalance',
+                      style: Theme.of(context).textTheme.bodyLarge,
+                    ),
+                    FutureBuilder<BigInt>(
+                      future: getStakedBalanceOf(),
+                      builder: (context, snapshot) {
+                        if (snapshot.connectionState == ConnectionState.waiting) {
+                          return const Center(child: CircularProgressIndicator());
+                        } else if (snapshot.hasError) {
+                          return Center(child: Text('Error: ${snapshot.error.toString()}'));
+                        } else {
+                          final balance = snapshot.data;
+                          final formattedBalance = _formatInt(balance!);
+                          return Center(
+                              child: Column(
+                            children: [
+                              Text(
+                                "Your staked token: ${formattedBalance}",
+                                style: Theme.of(context).textTheme.bodyLarge,
+                              ),
+                            ],
+                          ));
+                        }
+                      },
+                    ),
+                    AspectRatio(
+                      aspectRatio: 1.5,
+                      child: PieChart(
+                        PieChartData(
+                          sectionsSpace: 0,
+                          centerSpaceRadius: 40,
+                          sections: [
+                            PieChartSectionData(
+
+                              color: Colors.blue,
+                              value: double.tryParse(stakingRewardsRate!),
+                              title: '$stakingRewardsRate',
+                              showTitle: true,
+                            ),
+                            PieChartSectionData(
+                              color: Colors.green,
+                              value: double.tryParse(rewardPerToken!),
+                              title: '$rewardPerToken',
+                              showTitle: true,
+                            ),
+                          ],
+                        ),
+                      ),
+                    )
+                  ],
+                ));
+              }
+            },
+          ),
+        ),
+        const SizedBox(
+          height: 50,
+        ),
+        FutureBuilder<BigInt>(
+          future: getEarned(),
+          builder: (context, snapshot) {
+            if (snapshot.connectionState == ConnectionState.waiting) {
+              return const Center(child: CircularProgressIndicator());
+            } else if (snapshot.hasError) {
+              return Center(child: Text('Error: ${snapshot.error.toString()}'));
+            } else {
+              final balance = snapshot.data;
+              var a = _formatDouble(balance!);
+              return Center(
+                  child: Column(
+                children: [
+                  Text(
+                    'Earned tokens: $a',
+                    style: Theme.of(context).textTheme.labelLarge,
+                  ),
+                ],
+              ));
+            }
+          },
+        ),
+        ElevatedButton(
+            onPressed: () {
+              getReward();
+            },
+            child: Text("Get Reward")),
+        ElevatedButton(
+            onPressed: () {
+              withdraw();
+            },
+            child: Text("Withdraw All Staked Tokens"))
+      ],
+    );
+  }
+
+  SingleChildScrollView transfer(BuildContext context) {
+    return SingleChildScrollView(
+      child: Column(
+        children: [
+          FutureBuilder<BigInt>(
+            future: getBalance(),
             builder: (context, snapshot) {
               if (snapshot.connectionState == ConnectionState.waiting) {
                 return const Center(child: CircularProgressIndicator());
@@ -346,7 +539,7 @@ class _MyHomePageState extends State<MyHomePage> {
                       style: Theme.of(context).textTheme.headlineMedium,
                     ),
                     Text(
-                      'Balance of Staked token: $formattedBalance',
+                      'Balance of Emre token: $formattedBalance',
                       style: Theme.of(context).textTheme.labelLarge,
                     ),
                   ],
@@ -354,48 +547,127 @@ class _MyHomePageState extends State<MyHomePage> {
               }
             },
           ),
-        )
-      ],
+          Column(
+            children: [
+              Padding(
+                padding: const EdgeInsets.only(left: 20, right: 20, top: 30),
+                child: TextFormField(
+                  controller: _transferController,
+                  decoration: InputDecoration(
+                      hintText: 'Eth Address...',
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8.0),
+                        borderSide: const BorderSide(color: Colors.grey),
+                      )),
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.only(left: 20, right: 20, top: 10),
+                child: TextFormField(
+                  controller: _amountController,
+                  decoration: InputDecoration(
+                      hintText: 'Amount: ',
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8.0),
+                        borderSide: const BorderSide(color: Colors.grey),
+                      )),
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.only(top: 10.0),
+                child: ElevatedButton(
+                    onPressed: () {
+                      showConfirmationDialog(context, _transferController.text, _amountController.text);
+                    },
+                    child: const Icon(Icons.send_outlined)),
+              ),
+              Text(txText.toString()),
+              Column(
+                children: [
+                  currentAccount == account1 ? setDurationRewards() : const SizedBox(),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                    children: [
+                      SizedBox(
+                        width: 130,
+                        height: 50,
+                        child: TextField(
+                          keyboardType: TextInputType.number,
+                          onChanged: (value) {
+                            approveToken = value;
+                          },
+                          decoration: InputDecoration(
+                              hintText: 'Approve: ',
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(8.0),
+                                borderSide: const BorderSide(color: Colors.grey),
+                              )),
+                        ),
+                      ),
+                      Padding(
+                        padding: const EdgeInsets.all(8.0),
+                        child: ElevatedButton(
+                            onPressed: () {
+                              stakeForApprove(approveToken!);
+                            },
+                            child: const Text("approve tokens")),
+                      ),
+                    ],
+                  ),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                    children: [
+                      SizedBox(
+                        width: 130,
+                        height: 50,
+                        child: TextField(
+                          keyboardType: TextInputType.number,
+                          onChanged: (value) {
+                            stakeToken = value;
+                          },
+                          decoration: InputDecoration(
+                              hintText: 'Stake: ',
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(8.0),
+                                borderSide: const BorderSide(color: Colors.grey),
+                              )),
+                        ),
+                      ),
+                      Padding(
+                        padding: const EdgeInsets.all(10.0),
+                        child: ElevatedButton(
+                            onPressed: () {
+                              stakeTokens(stakeToken!);
+                            },
+                            child: const Text("Stake tokens")),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ],
+          )
+        ],
+      ),
     );
   }
 
-  Column transfer(BuildContext context) {
+  Column setDurationRewards() {
     return Column(
       children: [
-        FutureBuilder<BigInt>(
-          future: getBalance(),
-          builder: (context, snapshot) {
-            if (snapshot.connectionState == ConnectionState.waiting) {
-              return const Center(child: CircularProgressIndicator());
-            } else if (snapshot.hasError) {
-              return Center(child: Text('Error: ${snapshot.error.toString()}'));
-            } else {
-              final balance = snapshot.data;
-              final formattedBalance = _formatInt(balance!); // Assuming 18 decimals for ETH
-              return Center(
-                  child: Column(
-                children: [
-                  Text(
-                    "Current account name: ${currentAccount.accountName}",
-                    style: Theme.of(context).textTheme.headlineMedium,
-                  ),
-                  Text(
-                    'Balance of Emre token: $formattedBalance',
-                    style: Theme.of(context).textTheme.labelLarge,
-                  ),
-                ],
-              ));
-            }
-          },
-        ),
-        Column(
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceAround,
           children: [
-            Padding(
-              padding: const EdgeInsets.only(left: 20, right: 20, top: 30),
-              child: TextFormField(
-                controller: _transferController,
+            SizedBox(
+              width: 130,
+              height: 50,
+              child: TextField(
+                keyboardType: TextInputType.number,
+                onChanged: (value) {
+                  duration = value;
+                },
                 decoration: InputDecoration(
-                    hintText: 'Eth Address...',
+                    hintText: 'Duration: ',
                     border: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(8.0),
                       borderSide: const BorderSide(color: Colors.grey),
@@ -403,48 +675,44 @@ class _MyHomePageState extends State<MyHomePage> {
               ),
             ),
             Padding(
-              padding: const EdgeInsets.only(left: 20, right: 20, top: 10),
-              child: TextFormField(
-                controller: _amountController,
-                decoration: InputDecoration(
-                    hintText: 'Amount: ',
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(8.0),
-                      borderSide: const BorderSide(color: Colors.grey),
-                    )),
-              ),
-            ),
-            Padding(
-              padding: const EdgeInsets.only(top: 10.0),
+              padding: const EdgeInsets.all(8.0),
               child: ElevatedButton(
                   onPressed: () {
-                    showConfirmationDialog(context, _transferController.text, _amountController.text);
+                    setDurationOfStaking(duration!);
                   },
-                  child: const Icon(Icons.send_outlined)),
+                  child: const Text("Set duration")),
             ),
-            Text(txText.toString()),
-            ElevatedButton(
-                onPressed: () {
-                  setDurationOfStaking();
-                },
-                child: Text("Set duration")),
-            ElevatedButton(
-                onPressed: () {
-                  setNotifyRewardAmount();
-                },
-                child: Text("Set reward")),
-            ElevatedButton(
-                onPressed: () {
-                  stakeForApprove();
-                },
-                child: Text("approve tokens")),
-            ElevatedButton(
-                onPressed: () {
-                  stakeTokens();
-                },
-                child: Text("Stake tokens"))
           ],
-        )
+        ),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceAround,
+          children: [
+            SizedBox(
+              width: 130,
+              height: 50,
+              child: TextField(
+                keyboardType: TextInputType.number,
+                onChanged: (value) {
+                  rewards = value;
+                },
+                decoration: InputDecoration(
+                    hintText: 'Rewards: ',
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8.0),
+                      borderSide: const BorderSide(color: Colors.grey),
+                    )),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.all(8.0),
+              child: ElevatedButton(
+                  onPressed: () {
+                    setNotifyRewardAmount(rewards!);
+                  },
+                  child: const Text("Set reward")),
+            ),
+          ],
+        ),
       ],
     );
   }

@@ -5,7 +5,7 @@ const hre = require("hardhat");
 async function main() {
 
     const StakingRewards = await hre.ethers.getContractFactory("StakingRewards");
-    const EmreTokenAddress = hre.ethers.getAddress("0x054958005fD87355FD7B7d145Cf26D820D657B06");
+    const EmreTokenAddress = hre.ethers.getAddress("0x408A75B834DAA994dd9c421e095E0c527d16104B");
     const stakingRewards = await StakingRewards.deploy(EmreTokenAddress, EmreTokenAddress);
 
     await stakingRewards.waitForDeployment();
